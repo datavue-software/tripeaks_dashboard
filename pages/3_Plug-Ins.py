@@ -1,41 +1,14 @@
 import streamlit as st
-import os
-import json
+import pandas as pd
 import uuid
-from pathlib import Path
-import pandas as pd  # Add explicit pandas import
+from datetime import datetime
 
 # Page configuration
 st.set_page_config(page_title="Plugin Marketplace", layout="wide")
 
-# Initialize session state for current time if needed
-if "current_time" not in st.session_state:
-    st.session_state["current_time"] = "2024-05-06"
-
-# Initialize plugin directory - with error handling
-try:
-    PLUGIN_DIR = Path("plugins")
-    PLUGIN_DIR.mkdir(exist_ok=True)
-    
-    PLUGIN_CONFIG_FILE = PLUGIN_DIR / "plugin_config.json"
-    
-    # Initialize plugin configuration
-    if not PLUGIN_CONFIG_FILE.exists():
-        initial_config = {
-            "installed_plugins": {},
-            "active_plugins": []
-        }
-        with open(PLUGIN_CONFIG_FILE, 'w') as f:
-            json.dump(initial_config, f)
-    
-    # Load plugin configuration
-    with open(PLUGIN_CONFIG_FILE, 'r') as f:
-        plugin_config = json.load(f)
-except Exception as e:
-    # Graceful fallback if file operations fail
-    st.error(f"Error initializing plugin system: {str(e)}")
-    st.info("Using temporary plugin configuration for demo purposes.")
-    plugin_config = {
+# Initialize plugin state in session_state (no filesystem access needed)
+if "plugin_config" not in st.session_state:
+    st.session_state.plugin_config = {
         "installed_plugins": {},
         "active_plugins": []
     }
@@ -45,7 +18,7 @@ st.title("🧩 Plugin Marketplace")
 st.markdown("Extend your dashboard with powerful plugins")
 st.markdown("---")
 
-# Available plugins (in a real system, this could be fetched from a server)
+# Available plugins (hardcoded for demo)
 AVAILABLE_PLUGINS = [
     {
         "id": "export_excel",
@@ -138,8 +111,8 @@ with tab1:
             
             with cols[col_idx]:
                 plugin_id = plugin["id"]
-                is_installed = plugin_id in plugin_config["installed_plugins"]
-                is_active = plugin_id in plugin_config["active_plugins"]
+                is_installed = plugin_id in st.session_state.plugin_config["installed_plugins"]
+                is_active = plugin_id in st.session_state.plugin_config["active_plugins"]
                 
                 st.markdown(f"""
                 <div style="
@@ -176,51 +149,31 @@ with tab1:
                 if is_installed:
                     if is_active:
                         if st.button(f"Deactivate {plugin['name']}", key=f"deactivate_{plugin_id}"):
-                            plugin_config["active_plugins"].remove(plugin_id)
-                            try:
-                                with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                                    json.dump(plugin_config, f)
-                            except Exception as e:
-                                st.warning(f"Could not save configuration: {str(e)}")
+                            st.session_state.plugin_config["active_plugins"].remove(plugin_id)
                             st.rerun()
                     else:
                         if st.button(f"Activate {plugin['name']}", key=f"activate_{plugin_id}"):
-                            plugin_config["active_plugins"].append(plugin_id)
-                            try:
-                                with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                                    json.dump(plugin_config, f)
-                            except Exception as e:
-                                st.warning(f"Could not save configuration: {str(e)}")
+                            st.session_state.plugin_config["active_plugins"].append(plugin_id)
                             st.rerun()
                     
                     if st.button(f"Uninstall {plugin['name']}", key=f"uninstall_{plugin_id}"):
-                        if plugin_id in plugin_config["active_plugins"]:
-                            plugin_config["active_plugins"].remove(plugin_id)
-                        del plugin_config["installed_plugins"][plugin_id]
-                        try:
-                            with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                                json.dump(plugin_config, f)
-                        except Exception as e:
-                            st.warning(f"Could not save configuration: {str(e)}")
+                        if plugin_id in st.session_state.plugin_config["active_plugins"]:
+                            st.session_state.plugin_config["active_plugins"].remove(plugin_id)
+                        del st.session_state.plugin_config["installed_plugins"][plugin_id]
                         st.rerun()
                 else:
                     if st.button(f"Install {plugin['name']}", key=f"install_{plugin_id}"):
-                        plugin_config["installed_plugins"][plugin_id] = {
+                        st.session_state.plugin_config["installed_plugins"][plugin_id] = {
                             "version": plugin["version"],
-                            "installed_at": st.session_state.get("current_time", "2024-05-06"),
+                            "installed_at": datetime.now().strftime("%Y-%m-%d"),
                         }
-                        try:
-                            with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                                json.dump(plugin_config, f)
-                        except Exception as e:
-                            st.warning(f"Could not save configuration: {str(e)}")
                         st.success(f"Installed {plugin['name']}!")
                         st.rerun()
 
 with tab2:
     st.subheader("Manage Installed Plugins")
     
-    installed_plugins = plugin_config["installed_plugins"]
+    installed_plugins = st.session_state.plugin_config["installed_plugins"]
     
     if not installed_plugins:
         st.info("No plugins are currently installed. Visit the Marketplace tab to install plugins.")
@@ -234,7 +187,7 @@ with tab2:
                 "ID": plugin_id,
                 "Name": next((p["name"] for p in AVAILABLE_PLUGINS if p["id"] == plugin_id), plugin_id),
                 "Version": plugin_info["version"],
-                "Status": "Active" if plugin_id in plugin_config["active_plugins"] else "Inactive",
+                "Status": "Active" if plugin_id in st.session_state.plugin_config["active_plugins"] else "Inactive",
                 "Installed On": plugin_info.get("installed_at", "Unknown")
             })
         
@@ -247,23 +200,13 @@ with tab2:
         
         with col1:
             if st.button("Activate All"):
-                plugin_config["active_plugins"] = list(installed_plugins.keys())
-                try:
-                    with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                        json.dump(plugin_config, f)
-                except Exception as e:
-                    st.warning(f"Could not save configuration: {str(e)}")
+                st.session_state.plugin_config["active_plugins"] = list(installed_plugins.keys())
                 st.success("Activated all plugins!")
                 st.rerun()
         
         with col2:
             if st.button("Deactivate All"):
-                plugin_config["active_plugins"] = []
-                try:
-                    with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                        json.dump(plugin_config, f)
-                except Exception as e:
-                    st.warning(f"Could not save configuration: {str(e)}")
+                st.session_state.plugin_config["active_plugins"] = []
                 st.success("Deactivated all plugins!")
                 st.rerun()
 
@@ -289,32 +232,21 @@ with tab3:
     
     plugin_name = st.text_input("Plugin Name", "")
     plugin_description = st.text_area("Plugin Description", "")
-    plugin_category = st.selectbox("Plugin Category", categories if categories else ["Analysis", "Export", "Visualization"])
+    plugin_category = st.selectbox("Plugin Category", categories)
     
     if uploaded_file and plugin_name and plugin_description and plugin_category:
         if st.button("Submit Plugin"):
-            # In a real system, you would:
-            # 1. Validate the plugin code for security
-            # 2. Save it to the plugins directory
-            # 3. Register it in the plugin system
-            
+            # For demo purposes, just pretend we've installed it
             plugin_id = f"custom_{uuid.uuid4().hex[:8]}"
             
-            # For demo purposes, just pretend we've installed it
-            plugin_config["installed_plugins"][plugin_id] = {
+            st.session_state.plugin_config["installed_plugins"][plugin_id] = {
                 "version": "1.0.0",
-                "installed_at": st.session_state.get("current_time", "2024-05-06"),
+                "installed_at": datetime.now().strftime("%Y-%m-%d"),
                 "custom": True,
                 "name": plugin_name,
                 "description": plugin_description,
                 "category": plugin_category
             }
-            
-            try:
-                with open(PLUGIN_CONFIG_FILE, 'w') as f:
-                    json.dump(plugin_config, f)
-            except Exception as e:
-                st.warning(f"Could not save configuration: {str(e)}")
                 
             st.success(f"Plugin '{plugin_name}' uploaded and installed successfully!")
             st.info("Note: In a production environment, custom plugins would undergo security review before installation.")
@@ -360,4 +292,9 @@ Plugins extend your dashboard with new capabilities without requiring code chang
 
 Currently installed: {} plugins
 Active: {} plugins
-""".format(len(plugin_config["installed_plugins"]), len(plugin_config["active_plugins"])))
+""".format(len(st.session_state.plugin_config["installed_plugins"]), 
+           len(st.session_state.plugin_config["active_plugins"])))
+
+# This is useful for other pages to check if plugins are enabled
+if "plugin_system_enabled" not in st.session_state:
+    st.session_state.plugin_system_enabled = True
